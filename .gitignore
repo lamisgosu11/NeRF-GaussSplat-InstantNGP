@@ -1,0 +1,4 @@
+# ignore data.zip and data folder
+
+data.zip
+data/
