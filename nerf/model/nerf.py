@@ -53,3 +53,26 @@ class NerfModel(nn.Module):
 def compute_accumulated_transmittance(alphas):
     accumulated_transmittance = torch.cumprod(alphas, 1)
     return torch.cat((torch.ones((accumulated_transmittance.shape[0], 1), device=alphas.device), accumulated_transmittance[:, :-1]), dim=1)
+
+
+def render_rays(nerf_model, ray_origins, ray_direction, hn=0, hf=0.5, nb_bins=192):
+    device = ray_origins.device
+    t = torch.linspace(hn, hf, nb_bins, device=device).expand(
+        ray_origins.shape[0], nb_bins)
+
+    mid = (t[:, :-1] + t[:, 1:]) / 2
+    lower = torch.cat((t[:, :1], mid), -1)
+    upper = torch.cat((mid, t[:, -1:]), -1)
+    u = torch.rand(t.shape, device=device)
+    t = lower + (upper - lower) * u
+
+    delta = torch.cat((t[:, 1:] - t[:, :-1], torch.tensor([1e10],
+                      device=device).expand(ray_origins.shape[0], 1)), -1)
+
+    x = ray_origins.unsqueeze(1) + t.unsqueeze(2) * ray_direction.unsqueeze(1)
+    ray_directions = ray_direction.expand(
+        nb_bins, ray_direction.shape[0], 3).transpose(0, 1)
+
+    colors, sigma = nerf_model(x.reshape(-1, 3), ray_directions.reshape(-1, 3))
+    colors = colors.reshape(x.shape)
+    sigma = sigma.reshape(x.shape[:-1])
