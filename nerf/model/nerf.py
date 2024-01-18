@@ -76,3 +76,7 @@ def render_rays(nerf_model, ray_origins, ray_direction, hn=0, hf=0.5, nb_bins=19
     colors, sigma = nerf_model(x.reshape(-1, 3), ray_directions.reshape(-1, 3))
     colors = colors.reshape(x.shape)
     sigma = sigma.reshape(x.shape[:-1])
+
+    alpha = 1 - torch.exp(-sigma * delta)
+    weights = compute_accumulated_transmittance(
+        1-alpha).unsqueeze(2)*alpha.unsqueeze(2)
