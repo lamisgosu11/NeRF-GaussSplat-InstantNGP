@@ -1,0 +1,38 @@
+
+
+% \newcommand{\tablespace}{\,\,\,}
+\newcommand{\tablespace}{\,\,\,\,}
+\newcommand{\halftablespace}{\,}
+\setlength{\tabcolsep}{4pt}
+\begin{table}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+
+
+\begin{tabular}{l|ccc|ccc|ccc}
+& \multicolumn{3}{c|}{Diffuse Synthetic $360^\circ$~\cite{deepvoxels}} & \multicolumn{3}{c|}{Realistic Synthetic $360^\circ$} & \multicolumn{3}{c}{Real Forward-Facing~\cite{mildenhall19}} \\
+Method & PSNR$\uparrow$ & SSIM$\uparrow$ & LPIPS$\downarrow$ & PSNR$\uparrow$ & SSIM$\uparrow$ & LPIPS$\downarrow$ & PSNR$\uparrow$ & SSIM$\uparrow$ & LPIPS$\downarrow$ \\
+\hline
+% $\dagger$ &DeepVoxels~\cite{deepvoxels} & $30.55$ & $0.97\phantom{0}$ & - & - & - & - & - & - & - \\
+SRN~\cite{srn} & $33.20$ & $0.963$ & $0.073$ & $22.26$ & $0.846$ & $0.170$ & $22.84$ & $0.668$ & $0.378$ \\
+% &SRN~\cite{srn} & $33.20$ & $0.986$ & $0.073$ & $22.26$/$22.23$ & $0.867$/$0.874$ & $0.170$/$0.162$ \\
+NV~\cite{neuralvolumes} & $29.62$ & $0.929$ & $0.099$ & $26.05$ & $0.893$ & $0.160$ & - & - & - \\
+% &NV~\cite{neuralvolumes} & $29.62$ & $0.946$ & $0.099$ & $26.05$/$26.76$ & $0.944$/$0.952$ & $0.160$/$0.142$ \\
+LLFF~\cite{mildenhall19} & $34.38$ & $0.985$ & $0.048$ & $24.88$ & $0.911$ & $0.114$ & $24.13$ & $0.798$ & $\mathbf{0.212}$\\
+% &Ours, no VD & $34.76$ & $0.994$ & $0.039$ & xx & xx & xx \\
+Ours & $\mathbf{40.15}$ & $\mathbf{0.991}$ & $\mathbf{0.023}$ & $\mathbf{31.01}$ & $\mathbf{0.947}$ & $\mathbf{0.081}$ & $\mathbf{26.50}$ & $\mathbf{0.811}$ & $0.250$\\
+% &Ours & $\mathbf{40.15}$ & $\mathbf{0.998}$ & $\mathbf{0.023}$ & $\mathbf{31.01 / 31.90}$ & $\mathbf{0.977 / 0.981}$ & $\mathbf{0.081 / 0.083}$ \\
+% &Ours & $\mathbf{34.69}$ & $\mathbf{0.994}$ & xx & $\mathbf{31.01 / 31.90}$ & $\mathbf{0.977 / 0.981}$ & $\mathbf{0.081 / 0.083}$ \\
+% \hline
+\end{tabular}
+} \vspace{2mm}
+\caption{Our method quantitatively outperforms prior work on datasets of both synthetic and real images. We report PSNR/SSIM (higher is better) and LPIPS~\cite{lpips} (lower is better). 
+% Baselines indicated with $\dagger$ are taken from their original paper. 
+The DeepVoxels~\cite{deepvoxels} dataset consists of 4 diffuse objects with simple geometry. Our realistic synthetic dataset consists of pathtraced renderings of 8 geometrically complex objects with complex non-Lambertian materials. The real dataset consists of handheld forward-facing captures of 8 real-world scenes (NV cannot be evaluated on this data because it only reconstructs objects inside a bounded volume). 
+Though LLFF achieves slightly better LPIPS, 
+we urge readers to view our supplementary video where our method achieves better multiview consistency and produces fewer artifacts than all baselines.
+} \vspace{-2mm}
+
+\label{table:results}  
+\end{table}
+\setlength{\tabcolsep}{1.4pt}

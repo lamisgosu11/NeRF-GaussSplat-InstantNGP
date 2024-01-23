@@ -1,0 +1,438 @@
+% updated April 2002 by Antje Endemann
+% Based on CVPR 07 and LNCS, with modifications by DAF, AZ and elle, 2008 and AA, 2010, and CC, 2011; TT, 2014; AAS, 2016; AAS, 2020
+
+\documentclass[runningheads]{llncs}
+\usepackage{graphicx}
+\usepackage{comment}
+\usepackage{amsmath,amssymb} % define this before the line numbering.
+\usepackage{color}
+\usepackage{subcaption}
+\captionsetup{compatibility=false}
+\usepackage{mathtools}
+\usepackage{paralist} % compactenum
+\usepackage{colortbl}
+\usepackage{nicefrac}
+\usepackage{multirow}
+\usepackage[table,dvipsnames]{xcolor}
+\usepackage{booktabs}
+\usepackage{makecell}
+\usepackage{gensymb}
+
+\usepackage{afterpage}
+
+% \usepackage{microtype}
+
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
+
+% \usepackage{url}
+
+% \usepackage{xcolor}
+% \usepackage{textcomp}
+% \usepackage{xspace}
+
+
+% INITIAL SUBMISSION - The following two lines are NOT commented
+% CAMERA READY - Comment OUT the following two lines
+% \usepackage{ruler}
+\usepackage[width=122mm,left=12mm,paperwidth=146mm,height=193mm,top=12mm,paperheight=217mm]{geometry}
+
+\input{macros.tex}
+
+\makeatletter
+\newcommand{\printfnsymbol}[1]{%
+        \textsuperscript{\@fnsymbol{#1}}%
+}
+\makeatother
+
+
+\begin{document}
+% \renewcommand\thelinenumber{\color[rgb]{0.2,0.5,0.8}\normalfont\sffamily\scriptsize\arabic{linenumber}\color[rgb]{0,0,0}}
+% \renewcommand\makeLineNumber {\hss\thelinenumber\ \hspace{6mm} \rlap{\hskip\textwidth\ \hspace{6.5mm}\thelinenumber}}
+% \linenumbers
+\pagestyle{headings}
+\mainmatter
+\def\ECCVSubNumber{1473}  % Insert your submission number here
+
+\title{NeRF: Representing Scenes as \\ Neural Radiance Fields for View Synthesis} 
+
+% INITIAL SUBMISSION 
+%\begin{comment}
+% \titlerunning{ECCV-20 submission ID \ECCVSubNumber} 
+% \authorrunning{ECCV-20 submission ID \ECCVSubNumber} 
+% \author{Anonymous ECCV submission}
+% \institute{Paper ID \ECCVSubNumber}
+%\end{comment}
+%******************
+
+% CAMERA READY SUBMISSION
+% \begin{comment}
+\titlerunning{NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis}
+% If the paper title is too long for the running head, you can set
+% an abbreviated paper title here
+%
+
+\author{Ben Mildenhall$^1$\thanks{Authors contributed equally to this work.}
+% For a paper whose authors are all at the same institution,
+% omit the following lines up until the closing ``}''.
+% Additional authors and addresses can be added with ``\and'',
+% just like the second author.
+% To save space, use either the email address or home page, not both
+\quad
+Pratul P. Srinivasan$^1$\printfnsymbol{1}
+\quad
+Matthew Tancik$^1$\printfnsymbol{1} \\
+Jonathan T. Barron$^2$
+\quad
+Ravi Ramamoorthi$^3$
+\quad
+Ren Ng$^1$ 
+}
+\institute{$^1$UC Berkeley \quad $^2$Google Research \quad $^3$UC San Diego}
+%
+\authorrunning{B. Mildenhall, P. P. Srinivasan, M. Tancik et al.}
+
+% \end{comment}
+%******************
+\maketitle
+
+\begin{abstract}
+
+We present a method that achieves state-of-the-art results for synthesizing novel views of complex scenes by optimizing an underlying continuous volumetric scene function using a sparse set of input views. Our algorithm represents a scene using a fully-connected (non-convolutional) deep network, whose input is a single continuous 5D coordinate (spatial location $(x,y,z)$ and viewing direction $(\angletheta,\anglephi)$) and whose output is the volume density and view-dependent emitted radiance at that spatial location. We synthesize views by querying 5D coordinates along camera rays and use classic volume rendering techniques to project the output colors and densities into an image. Because volume rendering is naturally differentiable, the only input required to optimize our representation is a set of images with known camera poses. We describe how to effectively optimize neural radiance fields to render photorealistic novel views of scenes with complicated geometry and appearance, and demonstrate results that outperform prior work on neural rendering and view synthesis. View synthesis results are best viewed as videos, so we urge readers to view our supplementary video for convincing comparisons. 
+
+\keywords{scene representation, view synthesis, image-based rendering, volume rendering, 3D deep learning}
+\end{abstract}
+
+
+\section{Introduction}
+
+In this work, we address the long-standing problem of view synthesis in a new way by directly optimizing parameters of a continuous 5D scene representation to minimize the error of rendering a set of captured images. 
+
+We represent a static scene as a continuous 5D function that outputs the radiance emitted in each direction $(\angletheta,\anglephi)$ at each point $(x,y,z)$ in space, and a density at each point which acts like a differential opacity controlling how much radiance is accumulated by a ray passing through $(x,y,z)$.
+Our method optimizes a deep fully-connected neural network without any convolutional layers (often referred to as a multilayer perceptron or MLP) to represent this function by regressing from a single 5D coordinate $(x,y,z,\angletheta,\anglephi)$ to a single volume density and view-dependent RGB color. 
+To render this \emph{neural radiance field} (NeRF) from a particular viewpoint we:
+1) march camera rays through the scene to generate a sampled set of 3D points,
+2) use those points and their corresponding 2D viewing directions as input to the neural network to produce an output set of colors and densities, and
+3) use classical volume rendering techniques to accumulate those colors and densities into a 2D image.
+Because this process is naturally differentiable, we can use gradient descent to optimize this model by minimizing the error between each observed image and the corresponding views rendered from our representation. Minimizing this error across multiple views encourages the network to predict a coherent model of the scene by assigning high volume densities and accurate colors to the locations that contain the true underlying scene content.
+Figure~\ref{fig:pipeline} visualizes this overall pipeline.
+
+We find that the basic implementation of optimizing a neural radiance field representation for a complex scene does not converge to a sufficiently high-resolution representation and is inefficient in the required number of samples per camera ray. We address these issues by transforming input 5D coordinates with a positional encoding that enables the MLP to represent higher frequency functions, and we propose a hierarchical sampling procedure to reduce the number of queries required to adequately sample this high-frequency scene representation.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/teaser_small.pdf}
+\caption{We present a method that optimizes a continuous 5D neural radiance field representation (volume density and view-dependent color at any continuous location) of a scene from a set of input images. We use techniques from volume rendering to accumulate samples of this scene representation along rays to render the scene from any viewpoint. Here, we visualize the set of 100 input views of the synthetic \scenename{Drums} scene randomly captured on a surrounding hemisphere, and we show two novel views rendered from our optimized NeRF representation.}
+\label{fig:teaser}
+\end{figure}
+
+Our approach inherits the benefits of volumetric representations: both can represent complex real-world geometry and appearance and are well suited for gradient-based optimization using projected images. Crucially, our method overcomes the prohibitive storage costs of \emph{discretized} voxel grids when modeling complex scenes at high-resolutions. In summary, our technical contributions are:
+\begin{compactenum}[--]
+\item An approach for representing continuous scenes with complex geometry and materials as 5D neural radiance fields, parameterized as basic MLP networks.
+\item A differentiable rendering procedure based on classical volume rendering techniques, which we use to optimize these representations from standard RGB images. This includes a hierarchical sampling strategy to allocate the MLP's capacity towards space with visible scene content.
+\item A positional encoding to map each input 5D coordinate into a higher dimensional space, which enables us to successfully optimize neural radiance fields to represent high-frequency scene content.
+\end{compactenum}
+We demonstrate that our resulting neural radiance field method quantitatively and qualitatively outperforms state-of-the-art view synthesis methods, including works that fit neural 3D representations to scenes as well as works that train deep convolutional networks to predict sampled volumetric representations. As far as we know, this paper presents the first continuous neural scene representation that is able to render high-resolution photorealistic novel views of real objects and scenes from RGB images captured in natural settings. 
+
+
+\section{Related Work}
+
+A promising recent direction in computer vision is encoding objects and scenes in the weights of an MLP that directly maps from a 3D spatial location to an implicit representation of the shape, such as the signed distance~\cite{sdf} at that location. However, these methods have so far been unable to reproduce realistic scenes with complex geometry with the same fidelity as techniques that represent scenes using discrete representations such as triangle meshes or voxel grids. In this section, we review these two lines of work and contrast them with our approach, which enhances the capabilities of neural scene representations to produce state-of-the-art results for rendering complex realistic scenes. 
+
+A similar approach of using MLPs to map from low-dimensional coordinates to colors has also been used for representing other graphics functions such as images~\cite{stanley2007compositional}, textured materials~\cite{henzler20,texturefields,rainer20,rainer19}, and indirect illumination values~\cite{rrf}.
+
+\paragraph{\textbf{Neural 3D shape representations}}
+
+Recent work has investigated the implicit representation of continuous 3D shapes as level sets by optimizing deep networks that map $\posxyz$ coordinates to signed distance functions~\cite{jiang2020,deepsdf} or occupancy fields~\cite{genova2020,occupancynet}. However, these models are limited by their requirement of access to ground truth 3D geometry, typically obtained from synthetic 3D shape datasets such as ShapeNet~\cite{shapenet}. 
+Subsequent work has relaxed this requirement of ground truth 3D shapes by formulating differentiable rendering functions that allow neural implicit shape representations to be optimized using only 2D images. Niemeyer \etal~\cite{diffvolumetric} represent surfaces as 3D occupancy fields and use a numerical method to find the surface intersection for each ray, then calculate an exact derivative using implicit differentiation. Each ray intersection location is provided as the input to a neural 3D texture field that predicts a diffuse color for that point. Sitzmann \etal~\cite{srn} use a less direct neural 3D representation that simply outputs a feature vector and RGB color at each continuous 3D coordinate, and propose a differentiable rendering function consisting of a recurrent neural network that marches along each ray to decide where the surface is located.
+
+Though these techniques can potentially represent complicated and high-resolution geometry, they have so far been limited to simple shapes with low geometric complexity, resulting in oversmoothed renderings. We show that an alternate strategy of optimizing networks to encode 5D radiance fields (3D volumes with 2D view-dependent appearance) can represent higher-resolution geometry and appearance to render photorealistic novel views of complex scenes.
+
+\paragraph{\textbf{View synthesis and image-based rendering}}
+
+Given a dense sampling of views, photorealistic novel views can be reconstructed by simple light field sample interpolation techniques~\cite{levoy96,cohen96,davis12}. For novel view synthesis with sparser view sampling, the computer vision and graphics communities have made significant progress by predicting traditional geometry and appearance representations from observed images.
+One popular class of approaches uses mesh-based representations of scenes with either diffuse~\cite{waechter14} or view-dependent~\cite{buehler01,debevec96,wood00} appearance.
+Differentiable rasterizers~\cite{dibr,genova18,softras,opendr} or pathtracers~\cite{redner,Mitsuba2} can directly optimize mesh representations to reproduce a set of input images using gradient descent.
+However, gradient-based mesh optimization based on image reprojection is often difficult, likely because of local minima or poor conditioning of the loss landscape. Furthermore, this strategy requires a template mesh with fixed topology to be provided as an initialization before optimization~\cite{redner}, which is typically unavailable for unconstrained real-world scenes.
+
+Another class of methods use volumetric representations to address the task of high-quality photorealistic view synthesis from a set of input RGB images.
+Volumetric approaches are able to realistically represent complex shapes and materials, are well-suited for gradient-based optimization, and tend to produce less visually distracting artifacts than mesh-based methods.
+Early volumetric approaches used observed images to directly color voxel grids~\cite{kutulakos00,seitz99,szeliski98}. More recently, several methods~\cite{flynn19,henzler18,kar17,mildenhall19,penner17,srinivasan19,tulsiani17,zhou18} have used large datasets of multiple scenes to train deep networks that predict a sampled volumetric representation from a set of input images, and then use either alpha-compositing~\cite{porter84} or learned compositing along rays to render novel views at test time.
+Other works have optimized a combination of convolutional networks (CNNs) and sampled voxel grids for each specific scene, such that the CNN can compensate for discretization artifacts from low resolution voxel grids~\cite{deepvoxels} or allow the predicted voxel grids to vary based on input time or animation controls~\cite{neuralvolumes}.
+While these volumetric techniques have achieved impressive results for novel view synthesis, their ability to scale to higher resolution imagery is fundamentally limited by poor time and space complexity due to their discrete sampling --- rendering higher resolution images requires a finer sampling of 3D space.
+We circumvent this problem by instead encoding a \emph{continuous} volume within the parameters of a deep fully-connected neural network, which not only produces significantly higher quality renderings than prior volumetric approaches, but also requires just a fraction of the storage cost of those \emph{sampled} volumetric representations.
+
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/pipeline_v2_small.pdf}
+\caption{
+An overview of our neural radiance field scene representation and differentiable rendering procedure. We synthesize images by sampling 5D coordinates (location and viewing direction) along camera rays (a), feeding those locations into an MLP to produce a color and volume density (b), and using volume rendering techniques to composite these values into an image (c). This rendering function is differentiable, so we can optimize our scene representation by minimizing the residual between synthesized and ground truth observed images (d).
+}
+\label{fig:pipeline}
+\end{figure}
+
+
+\section{Neural Radiance Field Scene Representation}
+
+We represent a continuous scene as a 5D vector-valued function whose input is a 3D location $\mathbf{x} = (x,y,z)$ and 2D viewing direction $(\theta, \phi)$, and whose output is an emitted color $\mathbf{c} = (r,g,b)$ and volume density $\sigma$. In practice, we express direction as a 3D Cartesian unit vector $\mathbf{d}$. We approximate this continuous 5D scene representation with an MLP network $F_{\modeltheta} : (\mathbf{x}, \mathbf{d}) \to (\mathbf{c},\sigma)$ and optimize its weights $\modeltheta$ to map from each input 5D coordinate to its corresponding volume density and directional emitted color. 
+
+We encourage the representation to be multiview consistent by restricting the network to predict the volume density $\sigma$ as a function of only the location $\mathbf{x}$, while allowing the RGB color $\mathbf{c}$ to be predicted as a function of both location and viewing direction. To accomplish this, the MLP $F_\modeltheta$ first processes the input 3D coordinate $\mathbf{x}$ with 8 fully-connected layers (using ReLU activations and 256 channels per layer), and outputs $\sigma$ and a 256-dimensional feature vector. This feature vector is then concatenated with the camera ray's viewing direction and passed to one additional fully-connected layer (using a ReLU activation and 128 channels) that output the view-dependent RGB color.
+
+See Fig.~\ref{fig:viewdirs} for an example of how our method uses the input viewing direction to represent non-Lambertian effects.
+As shown in Fig.~\ref{fig:ablations}, a model trained without view dependence (only $\mathbf x$ as input) has difficulty representing specularities.
+
+
+
+
+\section{Volume Rendering with Radiance Fields}
+\label{sec:rendering}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/viewdirs_small.pdf}
+\caption{A visualization of view-dependent emitted radiance. Our neural radiance field representation outputs RGB color as a 5D function of both spatial position $\mathbf x$ and viewing direction $\mathbf d$. Here, we visualize example directional color distributions for two spatial locations in our neural representation of the \scenename{Ship} scene. 
+In (a) and (b), we show the appearance of two fixed 3D points from two different camera positions: one on the side of the ship (orange insets) and one on the surface of the water (blue insets).
+Our method predicts the changing specular appearance of these two 3D points, and in (c) we show how this behavior generalizes continuously across the whole hemisphere of viewing directions.
+}
+\label{fig:viewdirs}
+\end{figure}
+
+
+Our 5D neural radiance field represents a scene as the volume density and directional emitted radiance at any point in space. We render the color of any ray passing through the scene using principles from classical volume rendering~\cite{kajiya84}. The volume density $\sigma(\mathbf{x})$ can be interpreted as the differential probability of a ray terminating at an infinitesimal particle at location $\mathbf{x}$. The expected color $C(\mathbf{r})$ of camera ray $\mathbf{r}(t)=\mathbf{o} + t\mathbf{d}$ with near and far bounds $\timenear$ and $\timefar$ is: 
+\begin{equation}
+\Ctrue = \int_{\timenear}^{\timefar}T(t)\absrp(\mathbf{r}(t))\mathbf{c}(\mathbf{r}(t),\mathbf{d})dt\,, \textrm{ where }
+T(t) = \expo{-\int_{\timenear}^{t}\absrp(\mathbf{r}(s))ds}\,.
+\end{equation}
+The function $T(t)$ denotes the accumulated transmittance along the ray from $\timenear$ to $t$, \ie the probability that the ray travels from $\timenear$ to $t$ without hitting any other particle. Rendering a view from our continuous neural radiance field requires estimating this integral $\Ctrue$ for a camera ray traced through each pixel of the desired virtual camera.
+
+We numerically estimate this continuous integral using quadrature. Deterministic quadrature, which is typically used for rendering discretized voxel grids, would effectively limit our representation's resolution because the MLP would only be queried at a fixed discrete set of locations. Instead, we use a stratified sampling approach where we partition $[\timenear, \timefar]$ into $\numsamples$ evenly-spaced bins and then draw one sample uniformly at random from within each bin:
+\begin{equation}
+    t_i \sim \mathcal{U} \left[ \timenear + \frac{i-1}{\numsamples}(\timefar-\timenear),\,\, \timenear + \frac{i}{\numsamples}(\timefar-\timenear) \right]\,.
+    \label{eq:stratified}
+\end{equation} 
+Although we use a discrete set of samples to estimate the integral, stratified sampling enables us to represent a continuous scene representation because it results in the MLP being evaluated at continuous positions over the course of optimization. We use these samples to estimate $\Ctrue$ with the quadrature rule discussed in the volume rendering review by Max~\cite{max95}:
+\begin{equation}
+\label{eqn:render_coarse}
+\hat{C}(\mathbf{r})=\sum_{i=1}^{\numsamples}T_i (1-\expo{-\absrp_i \deltatime_i}) \mathbf{c}_i\,, \textrm{ where }
+T_i=\expo{- \sum_{j=1}^{i-1} \absrp_j \deltatime_j}\,,
+\end{equation}
+where $\deltatime_i = t_{i+1} - t_i $ is the distance between adjacent samples. 
+This function for calculating $\hat{C}(\mathbf{r})$ from the set of $(\mathbf{c}_i, \absrp_i)$ values is trivially differentiable and reduces to traditional alpha compositing with alpha values $\alpha_i = 1-\expo{-\absrp_i \deltatime_i}$. 
+
+
+
+\section{Optimizing a Neural Radiance Field}
+
+In the previous section we have described the core components necessary for modeling a scene as a neural radiance field and rendering novel views from this representation. However, we observe that these components are not sufficient for achieving state-of-the-art quality, as demonstrated in Section~\ref{sec:ablations}). We introduce two improvements to enable representing high-resolution complex scenes. The first is a positional encoding of the input coordinates that assists the MLP in representing high-frequency functions, and the second is a hierarchical sampling procedure that allows us to efficiently sample this high-frequency representation. 
+
+
+
+\newcommand{\resultscropwidth}{1.14in}
+
+
+\newcommand{\cropablationB}[1]{
+  \makecell{
+  \includegraphics[trim={366px 288px 210px 288px}, clip, width=\resultscropwidth]{#1} 
+  }
+}
+
+\begin{figure}[t]
+\centering
+\scriptsize
+\begin{tabular}{@{}c@{}c@{}c@{}c@{}}
+\cropablationB{figs/ablations/148_gt.jpg} &
+\cropablationB{figs/ablations/148_nerf.jpg} &
+\cropablationB{figs/ablations/148_no_vd.jpg} &
+\cropablationB{figs/ablations/148_no_ms.jpg} \\
+Ground Truth & Complete Model & No View Dependence & No Positional Encoding
+\end{tabular}
+\caption{Here we visualize how our full model benefits from representing view-dependent emitted radiance and from passing our input coordinates through a high-frequency positional encoding. Removing view dependence prevents the model from recreating the specular reflection on the bulldozer tread. Removing the positional encoding drastically decreases the model's ability to represent high frequency geometry and texture, resulting in an oversmoothed appearance.}
+\label{fig:ablations}
+\end{figure}
+
+
+
+
+\subsection{Positional encoding}
+\label{sec:posenc}
+
+Despite the fact that neural networks are universal function approximators~\cite{universal}, we found that having the network $F_\modeltheta$ directly operate on $\posall$ input coordinates results in renderings that perform poorly at representing high-frequency variation in color and geometry. This is consistent with recent work by Rahaman \etal~\cite{rahaman2018}, which shows that deep networks are biased towards learning lower frequency functions. They additionally show that mapping the inputs to a higher dimensional space using high frequency functions before passing them to the network enables better fitting of data that contains high frequency variation.
+
+\newcommand{\dummypos}{p}
+
+We leverage these findings in the context of neural scene representations, and show that reformulating $F_\modeltheta$ as a composition of two functions ${F_\modeltheta = F'_\modeltheta \circ \gamma }$, one learned and one not, significantly improves performance (see Fig.~\ref{fig:ablations} and Table~\ref{table:ablations}).
+Here $\gamma$ is a mapping from $\mathbb{R}$ into a higher dimensional space $\mathbb{R}^{2\numfrequencies}$, and $F'_\modeltheta$ is still simply a regular MLP. Formally, the encoding function we use is: 
+\begin{equation}
+    \gamma(\dummypos) = \left(
+    \begin{array}{ccccc}
+    \sin\left(2^0 \pi \dummypos\right), &
+    \cos\left(2^0 \pi \dummypos\right), &
+    \cdots, &
+    \sin\left(2^{\numfrequencies-1} \pi \dummypos\right), &
+    \cos\left(2^{\numfrequencies-1} \pi \dummypos\right)
+    \end{array} \right) \,.
+\label{eq:enc}
+\end{equation}
+This function $\gamma(\cdot)$ is applied separately to each of the three coordinate values in $\mathbf{x}$ (which are normalized to lie in $[-1, 1]$) and to the three components of the Cartesian viewing direction unit vector $\mathbf{d}$ (which by construction lie in $[-1, 1]$). 
+In our experiments, we set $L=10$ for $\gamma(\mathbf x)$ and $L=4$ for $\gamma(\mathbf d)$. 
+
+A similar mapping is used in the popular Transformer architecture~\cite{transformer}, where it is referred to as a \emph{positional encoding}. However, Transformers use it for a different goal of providing the discrete positions of tokens in a sequence as input to an architecture that does not contain any notion of order. In contrast, we use these functions to map continuous input coordinates into a higher dimensional space to enable our MLP to more easily approximate a higher frequency function. Concurrent work on a related problem of modeling 3D protein structure from projections~\cite{cryoem} also utilizes a similar input coordinate mapping.
+
+\subsection{Hierarchical volume sampling}
+\label{sec:hierarchical}
+
+Our rendering strategy of densely evaluating the neural radiance field network at $\numsamples$ query points along each camera ray is inefficient: free space and occluded regions that do not contribute to the rendered image are still sampled repeatedly.
+We draw inspiration from early work in volume rendering~\cite{levoy90} and propose a hierarchical representation that increases rendering efficiency by allocating samples proportionally to their expected effect on the final rendering.
+
+Instead of just using a single network to represent the scene, we simultaneously optimize two networks: one ``coarse'' and one ``fine''.
+We first sample a set of $\numsamplescoarse$ locations using stratified sampling, and evaluate the ``coarse'' network at these locations as described in Eqns.~\ref{eq:stratified} and \ref{eqn:render_coarse}. Given the output of this ``coarse'' network, we then produce a more informed sampling of points along each ray where samples are biased towards the relevant parts of the volume. To do this, we first rewrite the alpha composited color from the coarse network $\Ccoarse$ in Eqn.~\ref{eqn:render_coarse} as a weighted sum of all sampled colors $c_i$ along the ray:
+\begin{equation}
+  \Ccoarse=\sum_{i=1}^{\numsamplescoarse}\pweight_i c_i\,, \quad\,\,
+  \pweight_i = T_i(1-\expo{-\absrp_i \deltatime_i})\,.
+  \label{eqn:weights}
+\end{equation}
+Normalizing these weights as $\normpweight_i = \nicefrac{\pweight_i}{\sum_{j=1}^{\numsamplescoarse} \pweight_j}$ produces a piecewise-constant PDF along the ray.
+We sample a second set of $\numsamplesfine$ locations from this distribution using inverse transform sampling, evaluate our ``fine'' network at the union of the first and second set of samples, and compute the final rendered color of the ray $\Cfine$ using Eqn.~\ref{eqn:render_coarse} but using all $\numsamplescoarse+\numsamplesfine$ samples. This procedure allocates more samples to regions we expect to contain visible content. This addresses a similar goal as importance sampling, but we use the sampled values as a nonuniform discretization of the whole integration domain rather than treating each sample as an independent probabilistic estimate of the entire integral.
+
+\subsection{Implementation details}
+
+We optimize a separate neural continuous volume representation network for each scene. This requires only a dataset of captured RGB images of the scene, the corresponding camera poses and intrinsic parameters, and scene bounds (we use ground truth camera poses, intrinsics, and bounds for synthetic data, and use the COLMAP structure-from-motion package~\cite{colmap} to estimate these parameters for real data). At each optimization iteration, we randomly sample a batch of camera rays from the set of all pixels in the dataset, and then follow the hierarchical sampling described in Sec.~\ref{sec:hierarchical} to query $\numsamplescoarse$ samples from the coarse network and $\numsamplescoarse+\numsamplesfine$ samples from the fine network. We then use the volume rendering procedure described in Sec.~\ref{sec:rendering} to render the color of each ray from both sets of samples. Our loss is simply the total squared error between the rendered and true pixel colors for both the coarse and fine renderings:
+\begin{equation}
+\Ltrain=\sum_{\ray\in\raybatch}\left[\norm{\Ccoarse-\Ctrue}_2^2+\norm{\Cfine-\Ctrue}_2^2\right]
+\end{equation}
+where $\raybatch$ is the set of rays in each batch, and $\Ctrue$, $\Ccoarse$, and $\Cfine$ are the ground truth, coarse volume predicted, and fine volume predicted RGB colors for ray $\ray$ respectively. Note that even though the final rendering comes from $\Cfine$, we also minimize the loss of $\Ccoarse$ so that the weight distribution from the coarse network can be used to allocate samples in the fine network.
+
+In our experiments, we use a batch size of 4096 rays, each sampled at $\numsamplescoarse=64$ coordinates in the coarse volume and $\numsamplesfine=128$ additional coordinates in the fine volume. We use the Adam optimizer~\cite{KingmaB15} with a learning rate that begins at $5 \times 10^{-4}$ and decays exponentially to $5 \times 10^{-5}$ over the course of optimization (other Adam hyperparameters are left at default values of $\beta_1=0.9$, $\beta_2=0.999$, and $\epsilon=10^{-7}$). The optimization for a single scene typically take around 100--300k iterations to converge on a single NVIDIA V100 GPU (about 1--2 days).
+
+\section{Results}
+
+We quantitatively (Tables~\ref{table:results}) and qualitatively (Figs.~\ref{fig:synthresults} and~\ref{fig:realresults}) show that our method outperforms prior work, and provide extensive ablation studies to validate our design choices (Table~\ref{table:ablations}). We urge the reader to view our supplementary video to better appreciate our method's significant improvement over baseline methods when rendering smooth paths of novel views.
+
+\subsection{Datasets}
+
+\paragraph{\textbf{Synthetic renderings of objects}}
+\label{subsec:goodsynth}
+
+We first show experimental results on two datasets of synthetic renderings of objects (Table~\ref{table:results}, ``Diffuse Synthetic $360\degree$'' and ``Realistic Synthetic $360\degree$''). The DeepVoxels~\cite{deepvoxels} dataset contains four Lambertian objects with simple geometry. Each object is rendered at $512\times 512$ pixels from viewpoints sampled on the upper hemisphere (479 as input and 1000 for testing). We additionally generate our own dataset containing pathtraced images of eight objects that exhibit complicated geometry and realistic non-Lambertian materials. Six are rendered from viewpoints sampled on the upper hemisphere, and two are rendered from viewpoints sampled on a full sphere. We render 100 views of each scene as input and 200 for testing, all at $800\times 800$ pixels.
+
+
+\input{synthresults.tex}
+
+
+\paragraph{\textbf{Real images of complex scenes}}
+
+We show results on complex real-world scenes captured with roughly forward-facing images (Table~\ref{table:results}, ``Real Forward-Facing''). This dataset consists of 8 scenes captured with a handheld cellphone (5 taken from the LLFF paper and 3 that we capture), captured with 20 to 62 images, and hold out $\nicefrac{1}{8}$ of these for the test set. All images are $1008 \times 756$ pixels.
+
+
+
+\input{realresults.tex}
+
+
+
+\input{resultstable.tex}
+
+
+
+\subsection{Comparisons}
+
+To evaluate our model we compare against current top-performing techniques for view synthesis, detailed below. All methods use the same set of input views to train a separate network for each scene except Local Light Field Fusion~\cite{mildenhall19}, which trains a single 3D convolutional network on a large dataset, then uses the same trained network to process input images of new scenes at test time. 
+
+\paragraph{\textbf{Neural Volumes (NV)}~\cite{neuralvolumes}}
+synthesizes novel views of objects that lie entirely within a bounded volume in front of a distinct background (which must be separately captured without the object of interest). It optimizes a deep 3D convolutional network to predict a discretized RGB$\alpha$ voxel grid with $128^3$ samples as well as a 3D warp grid with $32^3$ samples. The algorithm renders novel views by marching camera rays through the warped voxel grid. 
+
+\paragraph{\textbf{Scene Representation Networks (SRN)}~\cite{srn}}
+represent a continuous scene as an opaque surface, implicitly defined by a MLP that maps each $(x,y,z)$ coordinate to a feature vector. They train a recurrent neural network to march along a ray through the scene representation by using the feature vector at any 3D coordinate to predict the next step size along the ray. The feature vector from the final step is decoded into a single color for that point on the surface. Note that SRN is a better-performing followup to DeepVoxels~\cite{deepvoxels} by the same authors, which is why we do not include comparisons to DeepVoxels.
+
+\paragraph{\textbf{Local Light Field Fusion (LLFF)}~\cite{mildenhall19}}
+LLFF is designed for producing photorealistic novel views for well-sampled forward facing scenes. It uses a trained 3D convolutional network to directly predict a discretized frustum-sampled RGB$\alpha$ grid (multiplane image or MPI~\cite{zhou18}) for each input view, then renders novel views by alpha compositing and blending nearby MPIs into the novel viewpoint. 
+
+
+\subsection{Discussion}
+
+We thoroughly outperform both baselines that also optimize a separate network per scene (NV and SRN) in all scenarios.
+Furthermore, we produce qualitatively and quantitatively superior renderings compared to LLFF (across all except one metric) while using only their input images as our entire training set.
+
+The SRN method produces heavily smoothed geometry and texture, and its representational power for view synthesis is limited by selecting only a single depth and color per camera ray. The NV baseline is able to capture reasonably detailed volumetric geometry and appearance, but its use of an underlying explicit $128^3$ voxel grid prevents it from scaling to represent fine details at high resolutions. LLFF specifically provides a ``sampling guideline'' to not exceed 64 pixels of disparity between input views, so it frequently fails to estimate correct geometry in the synthetic datasets which contain up to 400-500 pixels of disparity between views. Additionally, LLFF blends between different scene representations for rendering different views, resulting in perceptually-distracting inconsistency as is apparent in our supplementary video. 
+
+The biggest practical tradeoffs between these methods are time versus space. All compared single scene methods take at least 12 hours to train per scene. In contrast, LLFF can process a small input dataset in under 10 minutes. However, LLFF produces a large 3D voxel grid for every input image, resulting in enormous storage requirements (over 15GB for one ``Realistic Synthetic'' scene). Our method requires only 5 MB for the network weights (a relative compression of $3000\times$ compared to LLFF), which is even less memory than the \emph{input images alone} for a single scene from any of our datasets.
+
+\subsection{Ablation studies}
+\label{sec:ablations}
+
+\input{ablationstable.tex}
+
+We validate our algorithm's design choices and parameters with an extensive ablation study in Table~\ref{table:ablations}. We present results on our ``Realistic Synthetic $360\degree$'' scenes. Row 9 shows our complete model as a point of reference.
+Row 1 shows a minimalist version of our model without positional encoding (PE), view-dependence (VD), or hierarchical sampling (H). In rows 2--4 we remove these three components one at a time from the full model, observing that positional encoding (row 2) and view-dependence (row 3) provide the largest quantitative benefit followed by hierarchical sampling (row 4).
+Rows 5--6 show how our performance decreases as the number of input images is reduced. Note that our method's performance using only 25 input images still exceeds NV, SRN, and LLFF across all metrics when they are provided with 100 images (see supplementary material).
+In rows 7--8 we validate our choice of the maximum frequency $L$ used in our positional encoding for $\mathbf x$ (the maximum frequency used for $\mathbf d$ is scaled proportionally). Only using 5 frequencies reduces performance, but increasing the number of frequencies from 10 to 15 does not improve performance. We believe the benefit of increasing $L$ is limited once $2^L$ exceeds the maximum frequency present in the sampled input images (roughly 1024 in our data).
+
+\section{Conclusion}
+
+Our work directly addresses deficiencies of prior work that uses MLPs to represent objects and scenes as continuous functions. We demonstrate that representing scenes as 5D neural radiance fields (an MLP that outputs volume density and view-dependent emitted radiance as a function of 3D location and 2D viewing direction) produces better renderings than the previously-dominant approach of training deep convolutional networks to output discretized voxel representations. 
+
+Although we have proposed a hierarchical sampling strategy to make rendering more sample-efficient (for both training and testing), there is still much more progress to be made in investigating techniques to efficiently optimize and render neural radiance fields. Another direction for future work is interpretability: sampled representations such as voxel grids and meshes admit reasoning about the expected quality of rendered views and failure modes, but it is unclear how to analyze these issues when we encode scenes in the weights of a deep neural network. We believe that this work makes progress towards a graphics pipeline based on real world imagery, where complex scenes could be composed of neural radiance fields optimized from images of actual objects and scenes. \\
+
+
+\noindent \textbf{Acknowledgements} We thank Kevin Cao, Guowei Frank Yang, and Nithin Raghavan for comments and discussions. RR acknowledges funding from ONR grants N000141712687 and N000142012529 and the Ronald L. Graham Chair. BM is funded by a Hertz Foundation Fellowship, and MT is funded by an NSF Graduate Fellowship. Google provided a generous donation of cloud compute credits through the BAIR Commons program. We thank the following Blend Swap users for the models used in our realistic synthetic dataset: gregzaal (ship), 1DInc (chair), bryanajones (drums), Herberhold (ficus), erickfree (hotdog), Heinzelnisse (lego), elbrujodelatribu (materials), and up3d.de (mic).
+
+
+\bibliographystyle{splncs04}
+\bibliography{arxiv_submission}
+
+\appendix
+
+\section{Additional Implementation Details}
+
+\paragraph{\textbf{Network Architecture}}  
+Fig.~\ref{fig:net} details our simple fully-connected architecture.
+
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figs/netdiag.pdf}
+\caption{A visualization of our fully-connected network architecture. Input vectors are shown in green, intermediate hidden layers are shown in blue, output vectors are shown in red, and the number inside each block signifies the vector's dimension. All layers are standard fully-connected layers, black arrows indicate layers with ReLU activations, orange arrows indicate layers with no activation, dashed black arrows indicate layers with sigmoid activation, and ``+'' denotes vector concatenation. The positional encoding of the input location ($\gamma(\mathbf{x})$) is passed through 8 fully-connected ReLU layers, each with 256 channels. We follow the DeepSDF~\cite{deepsdf} architecture and include a skip connection that concatenates this input to the fifth layer's activation. An additional layer outputs the volume density $\sigma$ (which is rectified using a ReLU to ensure that the output volume density is nonnegative) and a 256-dimensional feature vector. This feature vector is concatenated with the positional encoding of the input viewing direction ($\gamma(\mathbf{d})$), and is processed by an additional fully-connected ReLU layer with 128 channels. A final layer (with a sigmoid activation) outputs the emitted RGB radiance at position $\mathbf{x}$, as viewed by a ray with direction $\mathbf{d}$.}
+\label{fig:net}
+\end{figure}
+
+
+\paragraph{\textbf{Volume Bounds}}
+Our method renders views by querying the neural radiance field representation at continuous 5D coordinates along camera rays. For experiments with synthetic images, we scale the scene so that it lies within a cube of side length 2 centered at the origin, and only query the representation within this bounding volume. Our dataset of real images contains content that can exist anywhere between the closest point and infinity, so we use normalized device coordinates to map the depth range of these points into $[-1,1]$. This shifts all the ray origins to the near plane of the scene, maps the perspective rays of the camera to parallel rays in the transformed volume, and uses disparity (inverse depth) instead of metric depth, so all coordinates are now bounded.
+
+\paragraph{\textbf{Training Details}}
+For real scene data, we regularize our network by adding random Gaussian noise with zero mean and unit variance to the output $\sigma$ values (before passing them through the ReLU) during optimization, finding that this slightly improves visual performance for rendering novel views. We implement our model in Tensorflow~\cite{tensorflow}.
+
+\paragraph{\textbf{Rendering Details}}
+To render new views at test time, we sample $64$ points per ray through the coarse network and $64+128=192$ points per ray through the fine network, for a total of $256$ network queries per ray. Our realistic synthetic dataset requires 640k rays per image, and our real scenes require 762k rays per image, resulting in between 150 and 200 million network queries per rendered image. On an NVIDIA V100, this takes approximately 30 seconds per frame.
+
+\section{Additional Baseline Method Details}
+
+\paragraph{\textbf{Neural Volumes (NV)}~\cite{neuralvolumes}}
+We use the NV code open-sourced by the authors at \url{https://github.com/facebookresearch/neuralvolumes} and follow their procedure for training on a single scene without time dependence. 
+
+\paragraph{\textbf{Scene Representation Networks (SRN)}~\cite{srn}}
+We use the SRN code open-sourced by the authors at \url{https://github.com/vsitzmann/scene-representation-networks} and follow their procedure for training on a single scene.
+
+\paragraph{\textbf{Local Light Field Fusion (LLFF)}~\cite{mildenhall19}}
+We use the pretrained LLFF model open-sourced by the authors at \url{https://github.com/Fyusion/LLFF}.
+
+\paragraph{\textbf{Quantitative Comparisons}} The SRN implementation published by the authors requires a significant amount of GPU memory, and is limited to an image resolution of $512 \times 512$ pixels even when parallelized across 4 NVIDIA V100 GPUs. We compute quantitative metrics for SRN at $512 \times 512$ pixels for our synthetic datasets and $504 \times 376$ pixels for the real datasets, in comparison to $800\times 800$ and $1008 \times 752$ respectively for the other methods that can be run at higher resolutions.
+
+
+\section{NDC ray space derivation}
+
+\input{ndc.tex}
+
+\section{Additional Results}
+
+\paragraph{\textbf{Per-scene breakdown}}
+Tables~\ref{table:suppresults1},~\ref{table:suppresults2},~\ref{table:suppresults3}, and~\ref{table:suppresultsabl} include a breakdown of the quantitative results presented in the main paper into per-scene metrics. The per-scene breakdown is consistent with the aggregate quantitative metrics presented in the paper, where our method quantitatively outperforms all baselines. Although LLFF achieves slightly better LPIPS metrics, we urge readers to view our supplementary video where our method achieves better multiview consistency and produces fewer artifacts than all baselines. 
+
+\input{dvoxresults.tex}
+
+\input{suppresultstable.tex}
+
+% \clearpage
+
+\end{document}

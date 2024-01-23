@@ -1,0 +1,145 @@
+We reconstruct real scenes with ``forward facing'' captures in the normalized device coordinate (NDC) space that is commonly used as part of the triangle rasterization pipeline. This space is convenient because it preserves parallel lines while converting the $z$ axis (camera axis) to be linear in disparity.
+
+Here we derive the transformation which is applied to rays to map them from camera space to NDC space. The standard 3D perspective projection matrix for homogeneous coordinates is:
+\begin{equation}
+    M = \begin{pmatrix}
+     \frac{n}{r} & 0 & 0 & 0 \\
+     0 & \frac{n}{t} & 0 & 0 \\
+     0 & 0 & \frac{-(f+n)}{f-n} & \frac{-2fn}{f-n} \\
+     0 & 0 & -1 & 0 
+    \end{pmatrix}
+\end{equation}
+where $n, f$ are the near and far clipping planes and $r$ and $t$ are the right and top bounds of the scene at the near clipping plane. (Note that this is in the convention where the camera is looking in the $-z$ direction.) To project a homogeneous point $(x,y,z,1)^\top$, we left-multiply by M and then divide by the fourth coordinate:
+\begin{align}
+    \begin{pmatrix}
+     \frac{n}{r} & 0 & 0 & 0 \\
+     0 & \frac{n}{t} & 0 & 0 \\
+     0 & 0 & \frac{-(f+n)}{f-n} & \frac{-2fn}{f-n} \\
+     0 & 0 & -1 & 0 
+    \end{pmatrix}
+    \begin{pmatrix}
+    x \\ y \\ z \\ 1
+    \end{pmatrix}
+    &=
+    \begin{pmatrix}
+    \frac{n}{r} x \\
+    \frac{n}{t} y \\
+    \frac{-(f+n)}{f-n} z - \frac{-2fn}{f-n} \\
+    -z
+    \end{pmatrix} \\
+    \textrm{project}
+    &\rightarrow
+    \begin{pmatrix}
+    \frac{n}{r} \frac{x}{-z} \\
+    \frac{n}{t} \frac{y}{-z} \\
+    \frac{(f+n)}{f-n} - \frac{2fn}{f-n} \frac{1}{-z}
+    \end{pmatrix}
+    \label{eq:projpt}
+\end{align}
+The projected point is now in normalized device coordinate (NDC) space, where the original viewing frustum has been mapped to the cube $[-1,1]^3$. 
+
+Our goal is to take a ray $\mathbf o + t \mathbf d$ and calculate a ray origin $\mathbf o'$ and direction $\mathbf d'$ in NDC space such that for every $t$, there exists a new $t'$ for which $\pi(\mathbf o + t \mathbf d) = \mathbf o' + t' \mathbf d'$ (where $\pi$ is projection using the above matrix). In other words, the projection of the original ray and the NDC space ray trace out the same points (but not necessarily at the same rate). 
+
+Let us rewrite the projected point from Eqn.~\ref{eq:projpt} as $(a_x x/z, a_y y/z, a_z + b_z / z)^\top$. The components of the new origin $\mathbf o'$ and direction $\mathbf d'$ must satisfy:
+\begin{align}
+    \begin{pmatrix}
+        a_x \frac{o_x + t d_x}{o_z + t d_z} \\[6pt]
+        a_y \frac{o_y + t d_y}{o_z + t d_z} \\[6pt]
+        a_z + \frac{b_z}{o_z + t d_z}
+    \end{pmatrix}
+    =
+    \begin{pmatrix}
+        o_x' + t' d_x' \\
+        o_y' + t' d_y' \\
+        o_z' + t' d_z' 
+    \end{pmatrix} \, .
+    \label{eq:rayeq}
+\end{align}
+To eliminate a degree of freedom, we decide that $t'=0$ and $t=0$ should map to the same point. Substituting $t=0$ and $t'=0$ Eqn.~\ref{eq:rayeq} directly gives our NDC space origin $\mathbf o'$:
+\begin{align}
+    \mathbf o' =
+    \begin{pmatrix}
+        o_x' \\
+        o_y' \\
+        o_z'
+    \end{pmatrix}
+    =
+    \begin{pmatrix}
+        a_x \frac{o_x}{o_z} \\[6pt]
+        a_y \frac{o_y}{o_z} \\[6pt]
+        a_z + \frac{b_z}{o_z}
+    \end{pmatrix}
+    = \pi(\mathbf o) \,. 
+\end{align}
+This is exactly the projection $\pi(\mathbf o)$ of the original ray's origin. By substituting this back into Eqn.~\ref{eq:rayeq} for arbitrary $t$, we can determine the values of $t'$ and $\mathbf d'$:
+\begin{align}
+    \begin{pmatrix}
+        t' d_x' \\
+        t' d_y' \\
+        t' d_z' 
+    \end{pmatrix}
+    &=
+    \begin{pmatrix}
+        a_x \frac{o_x + t d_x}{o_z + t d_z} - a_x \frac{o_x}{o_z} \\[6pt]
+        a_y \frac{o_y + t d_y}{o_z + t d_z} - a_y \frac{o_y}{o_z} \\[6pt]
+        a_z + \frac{b_z}{o_z + t d_z} - a_z - \frac{b_z}{o_z}
+    \end{pmatrix} \\[6pt]
+    &=
+    \begin{pmatrix}
+        a_x \frac{o_z(o_x + t d_x) - o_x(o_z + t d_z)}{(o_z + t d_z)o_z} \\[6pt]
+        a_y \frac{o_z(o_y + t d_y) - o_y(o_z + t d_z)}{(o_z + t d_z)o_z} \\[6pt]
+        b_z\frac{o_z - (o_z + t d_z)}{(o_z + t d_z)o_z}
+    \end{pmatrix} \\[6pt]
+    &= 
+    \begin{pmatrix}
+        a_x \frac{t d_z}{o_z + t d_z} \left(\frac{d_x}{d_z} - \frac{o_x}{o_z}\right) \\[6pt]
+        a_y \frac{t d_z}{o_z + t d_z} \left(\frac{d_y}{d_z} - \frac{o_y}{o_z}\right) \\[6pt]
+        -b_z \frac{t d_z}{o_z + t d_z} \frac{1}{o_z}
+    \end{pmatrix} 
+\end{align}
+Factoring out a common expression that depends only on $t$ gives us:
+\begin{align}
+    t' &= \frac{t d_z}{o_z + t d_z} = 1 - \frac{o_z}{o_z + t d_z} \\[6pt]
+    \mathbf d' &= 
+    \begin{pmatrix}
+        a_x \left(\frac{d_x}{d_z} - \frac{o_x}{o_z}\right) \\[6pt]
+        a_y \left(\frac{d_y}{d_z} - \frac{o_y}{o_z}\right) \\[6pt]
+        -b_z \frac{1}{o_z}
+    \end{pmatrix} \,. 
+\end{align}
+Note that, as desired, $t'=0$ when $t=0$. Additionally, we see that $t' \to 1$ as $t \to \infty$. Going back to the original projection matrix, our constants are:
+\begin{align}
+    a_x &= -\frac{n}{r} \\
+    a_y &= -\frac{n}{t} \\
+    a_z &= \frac{f+n}{f-n} \\
+    b_z &= \frac{2fn}{f-n} 
+\end{align}
+Using the standard pinhole camera model, we can reparameterize as:
+\begin{align}
+    a_x &= -\frac{f_{cam}}{W/2} \\
+    a_y &= -\frac{f_{cam}}{H/2} 
+\end{align}
+where $W$ and $H$ are the width and height of the image in pixels and $f_{cam}$ is the focal length of the camera. 
+
+In our real forward facing captures, we assume that the far scene bound is infinity (this costs us very little since NDC uses the $z$ dimension to represent \emph{inverse} depth, i.e., disparity). In this limit the $z$ constants simplify to:
+\begin{align}
+    a_z &= 1 \\
+    b_z &= 2n \, .
+\end{align}
+Combining everything together:
+\begin{align}
+    \mathbf o' &= 
+    \begin{pmatrix}
+        -\frac{f_{cam}}{W/2} \frac{o_x}{o_z} \\[6pt]
+        -\frac{f_{cam}}{H/2} \frac{o_y}{o_z} \\[6pt]
+        1 + \frac{2n}{o_z}
+    \end{pmatrix}
+    \\[6pt]
+    \mathbf d' &= 
+    \begin{pmatrix}
+        -\frac{f_{cam}}{W/2} \left(\frac{d_x}{d_z} - \frac{o_x}{o_z}\right) \\[6pt]
+        -\frac{f_{cam}}{H/2} \left(\frac{d_y}{d_z} - \frac{o_y}{o_z}\right) \\[6pt]
+        -2n \frac{1}{o_z}
+    \end{pmatrix} \, .
+\end{align}
+One final detail in our implementation: we shift $\mathbf o$ to the ray's intersection with the near plane at $z=-n$ (before this NDC conversion) by taking $\mathbf o_n = \mathbf o + t_n \mathbf d$ for $t_n = -(n + o_z) / d_z$. Once we convert to the NDC ray, this allows us to simply sample $t'$ linearly from $0$ to $1$ in order to get a linear sampling in disparity from $n$ to $\infty$ in the original space.

@@ -1,0 +1,63 @@
+
+\definecolor{yellow}{rgb}{1,1, 0.6}
+\definecolor{lightyellow}{rgb}{1,1, 0.8}
+\definecolor{orange}{rgb}{1, 0.8, 0.6}
+\definecolor{red}{rgb}{1, 0.6, 0.6}
+
+\definecolor{darkyellow}{rgb}{0.8, 0.8, 0.5}
+\definecolor{darkred}{rgb}{0.7, 0.3, 0.3}
+\definecolor{darkgreen}{rgb}{0.3, 0.7, 0.3}
+\definecolor{blue}{rgb}{0, 0, 1.0}
+\definecolor{green}{rgb}{0, 1.0, 0}
+\definecolor{pink}{rgb}{1, 0.4, 0.7}
+
+\newcommand{\barron}[1]{{\color{blue} barron: #1}}
+\newcommand{\todo}[1]{{\color{pink} TODO: #1}}
+
+
+\newcommand{\mbf}[1]{{\mathbf{#1}}}
+
+\let\originalleft\left
+\let\originalright\right
+\renewcommand{\left}{\mathopen{}\mathclose\bgroup\originalleft}
+\renewcommand{\right}{\aftergroup\egroup\originalright}
+
+% \DeclarePairedDelimiterX{\norm}[1]{\left\lVert}{\right\rVert}{#1}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+%\DeclarePairedDelimiterX{\abs}[1]{\left\lvert}{\right\rvert}{#1}
+
+\newcommand{\etal}{\textit{et al}. }
+\newcommand{\ie}{\textit{i}.\textit{e}., }
+\newcommand{\eg}{\textit{e}.\textit{g}. }
+\newcommand{\expo}[1]{\exp\left(#1\right)}
+% \newcommand{\expo}[1]{e^{#1}}
+
+\newcommand{\modeltheta}{\mathrm{\Theta}}
+\newcommand{\absrp}{\sigma}
+
+\newcommand{\numsamples}{N}
+\newcommand{\numsamplescoarse}{N_c}
+\newcommand{\numsamplesfine}{N_f}
+\newcommand{\timenear}{t_n}
+\newcommand{\timefar}{t_f}
+% \newcommand{\deltatime}{\Delta t}
+\newcommand{\deltatime}{\delta}
+
+\newcommand{\posxy}{xy}
+\newcommand{\posxyz}{xyz}
+\newcommand{\angletheta}{\theta}
+\newcommand{\anglephi}{\phi}
+\newcommand{\posall}{\posxyz\angletheta\anglephi}
+
+\newcommand{\numfrequencies}{L}
+
+\newcommand{\ray}{\mathbf{r}}
+\newcommand{\Ltrain}{\mathcal{L}}
+\newcommand{\raybatch}{\mathcal{R}}
+\newcommand{\Ccoarse}{\hat{C}_c(\ray)}
+\newcommand{\Cfine}{\hat{C}_f(\ray)}
+\newcommand{\Ctrue}{C(\ray)}
+\newcommand{\pweight}{w}
+\newcommand{\normpweight}{\hat{w}}
+
+\newcommand{\scenename}[1]{\textit{#1}}
