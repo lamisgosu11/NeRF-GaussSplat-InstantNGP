@@ -1,0 +1,18 @@
+torch
+torchvision
+pytorch-lightning==1.6.0
+test-tube
+kornia
+opencv-python
+matplotlib
+jupyter
+
+# for mesh
+PyMCubes
+pycollada
+trimesh
+pyglet
+
+# for point cloud
+plyfile
+open3d
